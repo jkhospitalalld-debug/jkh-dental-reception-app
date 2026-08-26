@@ -8,7 +8,7 @@ import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 public class MainActivity extends AppCompatActivity {
- private static final String HOME="https://jkh-dental-website.jkhospitalalld.workers.dev/reception.html";
+ private static final String HOME="https://jkh-billand-pres.jkhospitalalld.workers.dev/reception.html";
  private WebView web;
  @Override protected void onCreate(Bundle b){
   super.onCreate(b); web=new WebView(this); setContentView(web); setup();
@@ -25,7 +25,7 @@ public class MainActivity extends AppCompatActivity {
   Uri data = intent!=null? intent.getData() : null;
   if(data!=null){
    String u = data.toString();
-   if(u.startsWith("https://jkh-dental-website.jkhospitalalld.workers.dev")) return u;
+   if(u.startsWith("https://jkh-billand-pres.jkhospitalalld.workers.dev")) return u;
   }
   return HOME;
  }
@@ -60,4 +60,3 @@ public class MainActivity extends AppCompatActivity {
   return !(u.startsWith("http://")||u.startsWith("https://"));
  }
 }
-
