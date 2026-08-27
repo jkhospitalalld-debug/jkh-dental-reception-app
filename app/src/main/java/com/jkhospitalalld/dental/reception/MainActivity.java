@@ -2,6 +2,7 @@ package com.jkhospitalalld.dental.reception;
 
 import android.app.DownloadManager;
 import android.content.*;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.*;
 import android.view.*;
