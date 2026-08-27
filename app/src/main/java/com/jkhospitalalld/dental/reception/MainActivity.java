@@ -3,6 +3,7 @@ import android.app.DownloadManager;
 import android.content.*;
 import android.net.Uri;
 import android.os.*;
+import android.view.WindowManager;
 import android.webkit.*;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
@@ -11,7 +12,15 @@ public class MainActivity extends AppCompatActivity {
  private static final String HOME="https://jkh-billand-pres.jkhospitalalld.workers.dev/reception.html";
  private WebView web;
  @Override protected void onCreate(Bundle b){
-  super.onCreate(b); web=new WebView(this); setContentView(web); setup();
+  super.onCreate(b);
+  getWindow().setSoftInputMode(
+    WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+  );
+  web=new WebView(this);
+  web.setFocusable(true);
+  web.setFocusableInTouchMode(true);
+  setContentView(web); setup();
   web.loadUrl(startUrl(getIntent()));
   getOnBackPressedDispatcher().addCallback(this,new OnBackPressedCallback(true){
    public void handleOnBackPressed(){if(web.canGoBack())web.goBack();else finish();}
