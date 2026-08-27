@@ -19,16 +19,18 @@ import androidx.core.view.WindowInsetsCompat;
 public class MainActivity extends AppCompatActivity {
  private static final String HOME="https://jkh-billand-pres.jkhospitalalld.workers.dev/reception.html";
  private WebView web;
- private int normalWebHeight = ViewGroup.LayoutParams.MATCH_PARENT;
+ private int screenHeightPx;
+ private boolean keyboardState=false;
 
  @Override protected void onCreate(Bundle b){
   super.onCreate(b);
 
-  // Keep the content area separate from the IME. We handle the IME height
-  // explicitly below so the WebView always has a usable typing area.
   WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
-  getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
+  getWindow().setSoftInputMode(
+      WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE |
       WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+
+  screenHeightPx = getResources().getDisplayMetrics().heightPixels;
 
   web=new WebView(this);
   web.setFocusable(true);
@@ -36,23 +38,20 @@ public class MainActivity extends AppCompatActivity {
   setContentView(web);
   setup();
 
-  // Force the WebView to occupy the available area above the keyboard.
-  // When the keyboard closes, restore full height. Width is never changed.
+  /*
+   * IMPORTANT:
+   * Do not use OnGlobalLayoutListener here. It creates a feedback loop:
+   * resizing WebView changes the visible frame, which triggers another resize,
+   * which causes the violent up/down shaking seen during keyboard animation.
+   *
+   * WindowInsets is the single source of truth for IME visibility.
+   */
   ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
-   Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-   boolean keyboardOpen = insets.isVisible(WindowInsetsCompat.Type.ime());
-   ViewGroup.LayoutParams lp = web.getLayoutParams();
+   boolean open = insets.isVisible(WindowInsetsCompat.Type.ime());
 
-   if (keyboardOpen && ime.bottom > 0) {
-    int rootHeight = web.getRootView().getHeight();
-    int targetHeight = Math.max(1, rootHeight - ime.bottom);
-    lp.height = targetHeight;
-    web.setLayoutParams(lp);
-    syncPageViewport(true, targetHeight);
-   } else {
-    lp.height = normalWebHeight;
-    web.setLayoutParams(lp);
-    syncPageViewport(false, web.getHeight());
+   if (open != keyboardState) {
+    keyboardState = open;
+    applyKeyboardLayout(open);
    }
 
    return insets;
@@ -67,6 +66,34 @@ public class MainActivity extends AppCompatActivity {
     if(web.canGoBack()) web.goBack(); else finish();
    }
   });
+ }
+
+ private void applyKeyboardLayout(boolean open){
+  if(web==null) return;
+
+  ViewGroup.LayoutParams lp=web.getLayoutParams();
+
+  if(open){
+   // Exact requested behavior: 50% of the physical screen height.
+   // Width is never modified.
+   int target=Math.max(1, screenHeightPx / 2);
+   lp.height=target;
+  }else{
+   lp.height=ViewGroup.LayoutParams.MATCH_PARENT;
+  }
+
+  web.setLayoutParams(lp);
+
+  String js="(function(){"+
+      "document.documentElement.classList.toggle('keyboard-open',"+open+");"+
+      "document.body.classList.toggle('keyboard-open',"+open+");"+
+      "})();";
+
+  // One update only after the Android layout has settled.
+  web.postDelayed(()->{
+   if(web!=null) web.evaluateJavascript(js,null);
+   if(open) keepFocusedFieldVisible();
+  },100);
  }
 
  @Override protected void onNewIntent(Intent intent){
@@ -99,13 +126,11 @@ public class MainActivity extends AppCompatActivity {
    if(hasFocus) keepFocusedFieldVisible();
   });
 
-  web.getViewTreeObserver().addOnGlobalLayoutListener(this::onKeyboardLayoutChanged);
-
   web.setWebViewClient(new WebViewClient(){
    @Override public void onPageFinished(WebView view,String url){
     super.onPageFinished(view,url);
-    injectKeyboardViewportScript();
-    keepFocusedFieldVisible();
+    injectKeyboardStyle();
+    if(keyboardState) keepFocusedFieldVisible();
    }
 
    @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){
@@ -136,70 +161,30 @@ public class MainActivity extends AppCompatActivity {
   });
  }
 
- private void onKeyboardLayoutChanged(){
+ private void injectKeyboardStyle(){
   if(web==null) return;
-  Rect r=new Rect();
-  web.getWindowVisibleDisplayFrame(r);
-  int full=web.getRootView().getHeight();
-  int visible=r.height();
-  boolean keyboardOpen=full-visible > Math.max(180,(int)(full*0.18));
 
-  if(keyboardOpen){
-   int target=Math.max(1,visible);
-   ViewGroup.LayoutParams lp=web.getLayoutParams();
-   if(lp.height!=target){
-    lp.height=target;
-    web.setLayoutParams(lp);
-   }
-   syncPageViewport(true,target);
-   keepFocusedFieldVisible();
-  }else{
-   ViewGroup.LayoutParams lp=web.getLayoutParams();
-   if(lp.height!=normalWebHeight){
-    lp.height=normalWebHeight;
-    web.setLayoutParams(lp);
-   }
-   syncPageViewport(false,web.getHeight());
-  }
- }
-
- private void syncPageViewport(boolean keyboardOpen,int height){
-  if(web==null) return;
   String js="(function(){"+
-      "document.documentElement.classList.toggle('keyboard-open',"+keyboardOpen+");"+
-      "document.body.classList.toggle('keyboard-open',"+keyboardOpen+");"+
-      "document.documentElement.style.setProperty('--jkh-visible-height','"+Math.max(1,height)+"px');"+
-      "document.body.style.setProperty('--jkh-visible-height','"+Math.max(1,height)+"px');"+
+      "if(window.__jkhKeyboardFixV3)return;"+
+      "window.__jkhKeyboardFixV3=true;"+
+      "var s=document.createElement('style');"+
+      "s.id='jkh-keyboard-fix-v3';"+
+      "s.textContent='html,body{width:100%;max-width:100%;}'+"+
+      "'html.keyboard-open,body.keyboard-open{height:100%!important;min-height:0!important;}';"+
+      "document.head.appendChild(s);"+
       "})();";
-  web.postDelayed(()->web.evaluateJavascript(js,null),50);
- }
 
- private void injectKeyboardViewportScript(){
-  if(web==null) return;
-  String js="(function(){"+
-      "if(window.__jkhKeyboardFix)return; window.__jkhKeyboardFix=true;"+
-      "var style=document.createElement('style');"+
-      "style.id='jkh-keyboard-fix';"+
-      "style.textContent='html,body{width:100%;max-width:100%;}'+"+
-      "'html.keyboard-open,body.keyboard-open{height:var(--jkh-visible-height,50vh)!important;min-height:0!important;}'+"+
-      "'body.keyboard-open{overflow-y:auto!important;}';"+
-      "document.head.appendChild(style);"+
-      "var vv=window.visualViewport;"+
-      "if(vv){vv.addEventListener('resize',function(){"+
-      "document.documentElement.style.setProperty('--jkh-visible-height',vv.height+'px');"+
-      "document.body.style.setProperty('--jkh-visible-height',vv.height+'px');"+
-      "});}"+
-      "})();";
   web.evaluateJavascript(js,null);
  }
 
  private void keepFocusedFieldVisible(){
   if(web==null || !web.hasWindowFocus()) return;
+
   web.postDelayed(()->web.evaluateJavascript(
     "(function(){var e=document.activeElement;"+
     "if(e&&(e.tagName==='INPUT'||e.tagName==='TEXTAREA'||e.tagName==='SELECT')){"+
-    "try{e.scrollIntoView({block:'center',inline:'nearest'});}"+
-    "catch(x){e.scrollIntoView(true);}}})();",null),120);
+    "try{e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});}"+
+    "catch(x){e.scrollIntoView(true);}}})();",null),150);
  }
 
  private boolean external(String u){
